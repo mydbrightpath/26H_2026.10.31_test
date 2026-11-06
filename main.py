@@ -56,7 +56,7 @@ X_ROI_TOP =   300   # ROI区域在整体图片里面，左面的像素坐标x
 X_ROI_BOTTOM = 1700  # ROI区域在整体图片里面，右面的像素坐标x
 
 PIPE_IS_DARK = False  # 水管比背景亮：False；比背景暗：True。
-MIN_PIPE_AREA = 1000  # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
+MIN_PIPE_AREA = 2000  # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
 MIN_PIPE_LENGTH = 160  # 最小长边像素数，排除短小背景物体。
 MIN_PIPE_RATIO = 4.0  # 最小长宽比；倾斜后投影长宽比会减小，故不强求 12.5。
 MIN_RECT_FILL = 0.55  # 轮廓面积 / 最小外接矩形面积，排除明显零散的目标。
@@ -147,40 +147,87 @@ try:
             cv.RETR_LIST, #列出找到的轮廓，包括内部孔洞的边界
             cv.CHAIN_APPROX_SIMPLE)#减少直线段上重复保存的点，节省存储
 
+        # ==========================================
+        # 这一段还没有开始识别，它是在处理每张新图片之前，把“本次识别结果”先恢复到默认状态。
+        # 可以理解为：先准备一张空白记录表，找到水管和小球后，再填写结果。
+        # 新图片来了
+        #     ↓
+        # 先清空本次结果，设为“未找到”
+        #     ↓
+        # 后面执行识别
+        #     ↓
+        # 找到了，就填写位置并标记有效
+        # 没找到，就保持无效
+        # ==========================================
         # 每一帧先清空结果；没有识别到时，不能沿用上一帧的旧球坐标。
-        pipe_rect = None
-        pipe_area = 0.0
-        current_length_px = 0.0
-        ball_valid = False
-        ball_roi_px = None
-        ball_level_px = None
-        x_mm = 0.0
-        y_mm = 0.0
-        distance_mm = 0.0
-        status = 'PIPE LOST'
-        straight_view = np.zeros((80, 640, 3), dtype=np.uint8)
+
+        # 用来记录水管的信息。
+        pipe_rect = None    #当前还没有找到水管的矩形。None 表示“没有结果”。找到水管后，后面的代码会把矩形信息放进 pipe_rect。
+        pipe_area = 0.0 #先把选中的水管候选面积记为零。后面会比较不同轮廓的面积，筛选合适的水管候选。`0.0` 就是浮点数零。
+        current_length_px = 0.0 #当前水管的图像长度先记为零，找到后再更新。
+
+        # 用来记录小球有没有找到、在哪里。
+        ball_valid = False  #先认为这一张图没有得到有效的小球位置。找到并完成位置换算后，后面的代码才会设置：Ture,你可以把它理解成一个开关：False → 本次位置不能使用。True  → 本次位置可以使用。
+        ball_roi_px = None  #还不知道小球在 ROI 图片中的坐标。找到后，它可能变成：(320.0, 60.0),球在 ROI 图片中的 x=320、y=60，单位是像素。
+        ball_level_px = None    #还没有算出“小球还原到水管水平时，到左端的像素距离”。这是后面按你要求的长度比例计算得到的值
+
+        #记录换算后的毫米位置。
+        x_mm = 0.0  #小球沿水管方向，相对中心的位置，右正左负
+        y_mm = 0.0  #小球横向相对中心的粗略偏移
+        distance_mm = 0.0   #小球沿水管方向到中心的距离，即 abs(x_mm)
+        #x_mm = 0.0 本身不代表真的检测到球在中心，必须同时检查 ball_valid。
+
+        #准备显示的状态文字。
+        status = 'PIPE LOST'    #意思是：状态先记为“没有找到水管”。
+        # 后面的代码找到目标后，会修改它：
+        # status = 'BALL LOST'  # 找到了水管，但没有得到有效球位置。
+        # status = 'BALL OK'    # 找到小球，并完成位置换算。
+
+        # 最后两行，准备两张黑色图片。
+        # np.zeros() 表示“生成一个全部为零的数组”。用于图像时，全零就是黑色。
+        # 给“旋正后的水管画面”窗口准备的空白图。找到水管后，会用实际处理结果替换它。
+        straight_view = np.zeros((
+            80, #高度：80 像素
+            640, #宽度：640 像素
+            3), #通道：3 个，即彩色图片的 B、G、R
+            dtype=np.uint8)  
+        # 这里的 80 只是没有识别结果时，空白显示图的高度，不是你的 ROI 高度。 你的 ROI 仍然是高 120、宽 640。
+        # 准备黑图的目的，是让识别失败时窗口显示空白结果，避免继续显示上一张成功识别的旧图片。
+        
+        # 创建的是单通道黑图，给“小球分割结果”窗口使用。
         ball_mask_view = np.zeros((80, 640), dtype=np.uint8)
 
         # ==========================================
         # 第四步：最小外接矩形筛选水管
         # ==========================================
+        # “挑水管”：前面找到了很多轮廓，现在逐个检查，把不像水管的排除，最后留下一个候选。
         for cnt in contours:
+            #面积太小的轮廓排除，不是水管
             area = cv.contourArea(cnt)
-            if area < MIN_PIPE_AREA:
+            if area < MIN_PIPE_AREA:    # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
                 continue
+
             rect = cv.minAreaRect(cnt)
             # rect 为元组：((中心x,中心y), (边长1,边长2), 旋转角度)。
             # 它的宽高和角度约定容易混淆；下面只取边长大小，不直接使用角度。
-            side1, side2 = rect[1]
-            long_side = max(side1, side2)
-            short_side = min(side1, side2)
+            #取出矩形的长边、短边
+            side1, side2 = rect[1]  
+            long_side = max(side1, side2)   #长边
+            short_side = min(side1, side2)  #短边
+            # 排除太窄、太短的矩形。
             if short_side < 8 or long_side < MIN_PIPE_LENGTH:
                 continue
-            if long_side / short_side < MIN_PIPE_RATIO:
-                continue
-            if area / (long_side * short_side) < MIN_RECT_FILL:
+            # 排除不够细长的矩形。
+            if long_side / short_side < MIN_PIPE_RATIO: #要求长边 ÷ 短边 ≥ MIN_PIPE_RATIO
                 continue
 
+            # 检查轮廓有没有比较充分地占满矩形。
+            # long_side * short_side是外接矩形的面积。area是原轮廓的面积
+            # 轮廓面积 / 外接矩形面积：表示轮廓占矩形的比例。
+            if area / (long_side * short_side) < MIN_RECT_FILL:     #这个比例只是形状筛选，不代表识别正确率。
+                continue
+            
+            # 检查矩形是不是碰到了裁剪边界。
             box = cv.boxPoints(rect)  # float32 数组，形状 (4,2)，四个顶点。
             # ROI 把水管切断时不能用剩下那截长度来换算，所以放弃该候选。
             if (np.min(box[:, 0]) <= 1 or np.max(box[:, 0]) >= 638 or

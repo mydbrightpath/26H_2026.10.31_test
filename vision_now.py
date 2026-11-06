@@ -56,7 +56,7 @@ X_ROI_TOP =   300   # ROI区域在整体图片里面，左面的像素坐标x
 X_ROI_BOTTOM = 1700  # ROI区域在整体图片里面，右面的像素坐标x
 
 PIPE_IS_DARK = False  # 水管比背景亮：False；比背景暗：True。
-MIN_PIPE_AREA = 1000  # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
+MIN_PIPE_AREA = 2000  # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
 MIN_PIPE_LENGTH = 160  # 最小长边像素数，排除短小背景物体。
 MIN_PIPE_RATIO = 4.0  # 最小长宽比；倾斜后投影长宽比会减小，故不强求 12.5。
 MIN_RECT_FILL = 0.55  # 轮廓面积 / 最小外接矩形面积，排除明显零散的目标。
@@ -149,6 +149,9 @@ try:
 
         #测试：画出轮廓
         for index,cnt in enumerate(contours): 
+            area = cv.contourArea(cnt)
+            if area < MIN_PIPE_AREA:    # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
+                continue
             cv.drawContours(preview,[cnt],0,(0,0,255),2)
         
         cv.imshow("img", img)
