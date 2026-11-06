@@ -1,0 +1,27 @@
+import cv2 as cv
+import numpy as np
+import os
+
+# ==========================================
+# 第一步：外设配置
+# ==========================================
+#在linux终端上输入这行命令:echo $DISPLAY 输出的所有结果赋值过来,例如:'localhost:11.0'
+#这样就可以把图像直接显示出来
+os.environ['DISPLAY'] = 'localhost:10.0'
+
+# 打开 USB 摄像头
+# 参数 0 通常代表电脑默认摄像头或插入的第一个 USB 摄像头
+# 如果打不开，可以尝试改成 1 或 2
+cap = cv.VideoCapture('/dev/video0',cv.CAP_V4L2)  #linux系统上的打开方法
+# cap = cv.VideoCapture(1)    #电脑上的打开方法
+
+
+# 检查摄像头是否成功打开
+if not cap.isOpened():
+    print(' Error: 无法打开 USB 摄像头！' \
+    '请检查 USB 连接或修改设备索引号 (如改用 cap = cv.VideoCapture(1))')
+    exit()
+
+# 可选：设置摄像头的分辨率（例如设置为 640x480保证处理流畅度，还可设置为1080p:1920x1080）
+cap.set(cv.CAP_PROP_FRAME_WIDTH, 1920)
+cap.set(cv.CAP_PROP_FRAME_HEIGHT, 1080)
