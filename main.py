@@ -265,7 +265,7 @@ try:
             current_length_px = float(np.linalg.norm(right_middle - left_middle))
             current_width_px = float(np.linalg.norm(left[1] - left[0]))
 
-            # 将最小矩形旋正，方便沿水管方向逐列寻找暗谷。
+            # 将最小矩形旋正(长条从左到右水平排列,不是在画面里面斜着的)，方便沿水管方向逐列寻找暗谷：
             # 这里不强制把长宽比变成 25:2，否则就提前抹掉了你要用的长度变化。
             # 最小外接矩形本身不含梯形透视信息，这一步只是旋正/重采样，
             # 不能称为消除了真实拍摄透视。后面的长度还原仍按你的比例模型计算。
@@ -276,6 +276,8 @@ try:
             matrix = cv.getPerspectiveTransform(src, dst)
             inverse_matrix = cv.getPerspectiveTransform(dst, src)
             straight = cv.warpPerspective(roi, matrix, (out_w, out_h))
+
+            #最后三行，是准备检测图和显示图。
             straight_gray = cv.cvtColor(straight, cv.COLOR_BGR2GRAY)
             straight_view = straight.copy()
             cv.polylines(preview, [np.int32(np.round(src))], True, (0, 255, 255), 2)
