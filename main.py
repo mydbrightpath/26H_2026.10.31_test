@@ -25,10 +25,10 @@ if not cap.isOpened():
 # format_code = cv.VideoWriter_fourcc('M', 'J', 'P', 'G')
 # # 第二步：把这个格式编号交给摄像头。
 # cap.set(cv.CAP_PROP_FOURCC, format_code)
-#每一张画面的宽度是 640 像素
-cap.set(cv.CAP_PROP_FRAME_WIDTH, 640)  
-#高度：480 像素
-cap.set(cv.CAP_PROP_FRAME_HEIGHT, 480)  
+#每一张画面的宽度是 1920 像素
+cap.set(cv.CAP_PROP_FRAME_WIDTH, 1920)  
+#高度：1080 像素
+cap.set(cv.CAP_PROP_FRAME_HEIGHT, 1080)  
 #希望摄像头每秒提供 120 张图像
 cap.set(cv.CAP_PROP_FPS, 120)   #FPS 的意思是“每秒多少帧”，一帧就是一张图像。
 # 请求缩小缓存，部分驱动可能忽略此设置
@@ -49,8 +49,11 @@ SERIAL_BAUDRATE = 115200  # 整数：必须与单片机一致。
 PIPE_LENGTH_MM = 250.0  # 浮点数：水管实际长度，25 cm = 250 mm。
 PIPE_WIDTH_MM = 20.0  # 水管外宽 2 cm；用于形状和球大小的粗略筛选。
 BALL_DIAMETER_MM = 10.0  # 钢球约 1 cm，仅用于估算检测大小。
-ROI_TOP = 180  # 上边去掉的像素数。
-ROI_BOTTOM = 180  # 下边去掉的像素数；剩余高度为 480-180-180=120。
+#ROI
+Y_ROI_TOP =   400   # ROI区域在整体图片里面，上面的像素坐标y
+Y_ROI_BOTTOM = 590  # ROI区域在整体图片里面，下面的像素坐标y
+X_ROI_TOP =   300   # ROI区域在整体图片里面，左面的像素坐标x
+X_ROI_BOTTOM = 1700  # ROI区域在整体图片里面，右面的像素坐标x
 
 PIPE_IS_DARK = False  # 水管比背景亮：False；比背景暗：True。
 MIN_PIPE_AREA = 1000  # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
@@ -84,31 +87,65 @@ try:
         # ==========================================
         # 第三步：读取一帧，并裁剪上下 ROI
         # ==========================================
-        ret, img = cap.read()  # ret 是 bool；img 是 uint8 类型的 BGR 三维数组。
-        if not ret or img is None:
-            print('无法读取摄像头画面，程序退出')
+        # 1. 从摄像头读取一张图片。
+        # ret：有没有读取成功。
+        # img：读取到的图片。
+        ret, img = cap.read()
+        # 2. 如果读取失败，就结束循环。
+        if ret == False:
+            print("读取图片失败")
             break
-        if img.shape[1] != 640 or img.shape[0] != 480:
-            # 不悄悄缩放，否则你以为的 180 px 裁剪和实际取图就不是同一件事。
-            print('相机没有输出 640×480，实际尺寸为：', img.shape)
+        # 有时也可能没有拿到图片，再检查一次。
+        if img is None:
+            print("没有拿到图片")
             break
+        # # 3. 获取这张图片的高度和宽度。
+        # height = img.shape[0]  # 高度
+        # width = img.shape[1]   # 宽度
+        # # 4. 检查图片大小是否符合我们的要求。
+        # if width != 640:
+        #     print("图片宽度不是640，实际宽度是：", width)
+        #     break
+        # if height != 480:
+        #     print("图片高度不是480，实际高度是：", height)
+        #     break
 
-        # 数组切片先写 y（行），再写 x（列）；结束下标不包含在结果里。
-        # 因此取原图第 180～299 行、全部 640 列，得到 640×120 的 ROI。
-        roi = img[ROI_TOP:480 - ROI_BOTTOM, :]
-        preview = roi.copy()  # 单独画标记，避免影响后面在原 ROI 上计算灰度。
+        # 5. 只保留中间的区域。
+        roi = img[Y_ROI_TOP:Y_ROI_BOTTOM, X_ROI_TOP:X_ROI_BOTTOM]
+        # 6. 另外复制一张，后面专门用来画框、画圆。
+        preview = roi.copy()    # 单独画标记，避免影响后面在原 ROI 上计算灰度
+
+        # ==========================================
+        # 图像处理部分
+        # ==========================================
         gray = cv.cvtColor(roi, cv.COLOR_BGR2GRAY)
         blur = cv.GaussianBlur(gray, (5, 5), 0)  # 抑制细小噪声，保留主体轮廓。
 
         # Otsu 根据当前 ROI 的灰度分布自动选择一个全局阈值。
         # threshold 的第一个返回值是阈值数值，第二个返回值才是二值图。
         binary_mode = cv.THRESH_BINARY
-        if PIPE_IS_DARK:
+        if PIPE_IS_DARK:    # 水管比背景亮：False；比背景暗：True。
             binary_mode = cv.THRESH_BINARY_INV
         otsu_value, th = cv.threshold(blur, 0, 255, binary_mode + cv.THRESH_OTSU)
-        kernel = np.ones((3, 3), dtype=np.uint8)
-        th = cv.morphologyEx(th, cv.MORPH_CLOSE, kernel)  # 填补小裂缝。
-        contours, hierarchy = cv.findContours(th, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+
+        #备一个3×3的小方块，作为修补二值图时使用的工具。
+        kernel = np.ones(
+            (3, 3), # 小方块的大小。
+            dtype=np.uint8)# 数字的存储类型，这里按这个写即可。
+        # 用这个小方块，对二值图做“闭运算”。先膨胀、再腐蚀，尝试补上细小裂缝。
+        # 先膨胀：让白色区域向外扩一点。
+        # 再腐蚀：让白色区域向内缩回来。
+        th = cv.morphologyEx(
+            th,     # 要处理的黑白图片。
+            cv.MORPH_CLOSE, # 选择“闭运算”这种处理方式。
+            kernel)  # 使用刚才准备的3×3小方块。
+
+        #沿着白色区域的边缘，找出轮廓。
+        # 此时只找到了轮廓，还没有判断哪个是水管。
+        contours, hierarchy = cv.findContours(
+            th, #在这张二值图中找轮廓
+            cv.RETR_LIST, #列出找到的轮廓，包括内部孔洞的边界
+            cv.CHAIN_APPROX_SIMPLE)#减少直线段上重复保存的点，节省存储
 
         # 每一帧先清空结果；没有识别到时，不能沿用上一帧的旧球坐标。
         pipe_rect = None
@@ -339,6 +376,4 @@ except KeyboardInterrupt:
     print('用户中断程序')
 finally:
     cap.release()
-    if sender is not None:
-        sender.close()
     cv.destroyAllWindows()
