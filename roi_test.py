@@ -42,9 +42,9 @@ if __name__ == "__main__":
         cap.get(cv.CAP_PROP_FPS)) #120.0 是驱动报告的配置值,不是用计时器实测出来的处理速度。
 
     #ROI
-    Y_ROI_TOP =   400   # ROI区域在整体图片里面，上面的像素坐标y
-    Y_ROI_BOTTOM = 590  # ROI区域在整体图片里面，下面的像素坐标y
-    X_ROI_TOP =   270   # ROI区域在整体图片里面，左面的像素坐标x
+    Y_ROI_TOP =   430   # ROI区域在整体图片里面，上面的像素坐标y
+    Y_ROI_BOTTOM = 560  # ROI区域在整体图片里面，下面的像素坐标y
+    X_ROI_TOP =   370   # ROI区域在整体图片里面，左面的像素坐标x
     X_ROI_BOTTOM = 1700  # ROI区域在整体图片里面，右面的像素坐标x
 
     try:

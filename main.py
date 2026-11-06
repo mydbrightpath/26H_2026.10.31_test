@@ -50,13 +50,13 @@ PIPE_LENGTH_MM = 250.0  # 浮点数：水管实际长度，25 cm = 250 mm。
 PIPE_WIDTH_MM = 20.0  # 水管外宽 2 cm；用于形状和球大小的粗略筛选。
 BALL_DIAMETER_MM = 10.0  # 钢球约 1 cm，仅用于估算检测大小。
 #ROI
-Y_ROI_TOP =   400   # ROI区域在整体图片里面，上面的像素坐标y
-Y_ROI_BOTTOM = 590  # ROI区域在整体图片里面，下面的像素坐标y
-X_ROI_TOP =   300   # ROI区域在整体图片里面，左面的像素坐标x
+Y_ROI_TOP =   430   # ROI区域在整体图片里面，上面的像素坐标y
+Y_ROI_BOTTOM = 560  # ROI区域在整体图片里面，下面的像素坐标y
+X_ROI_TOP =   370   # ROI区域在整体图片里面，左面的像素坐标x
 X_ROI_BOTTOM = 1700  # ROI区域在整体图片里面，右面的像素坐标x
 
 PIPE_IS_DARK = False  # 水管比背景亮：False；比背景暗：True。
-MIN_PIPE_AREA = 2000  # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
+MIN_PIPE_AREA = 5000  # 最小水管轮廓面积，单位 px²，需看实际二值图调整。
 MIN_PIPE_LENGTH = 160  # 最小长边像素数，排除短小背景物体。
 MIN_PIPE_RATIO = 4.0  # 最小长宽比；倾斜后投影长宽比会减小，故不强求 12.5。
 MIN_RECT_FILL = 0.55  # 轮廓面积 / 最小外接矩形面积，排除明显零散的目标。
@@ -210,29 +210,39 @@ try:
             rect = cv.minAreaRect(cnt)
             # rect 为元组：((中心x,中心y), (边长1,边长2), 旋转角度)。
             # 它的宽高和角度约定容易混淆；下面只取边长大小，不直接使用角度。
-            #取出矩形的长边、短边
-            side1, side2 = rect[1]  
-            long_side = max(side1, side2)   #长边
-            short_side = min(side1, side2)  #短边
-            # 排除太窄、太短的矩形。
-            if short_side < 8 or long_side < MIN_PIPE_LENGTH:
-                continue
-            # 排除不够细长的矩形。
-            if long_side / short_side < MIN_PIPE_RATIO: #要求长边 ÷ 短边 ≥ MIN_PIPE_RATIO
-                continue
 
-            # 检查轮廓有没有比较充分地占满矩形。
-            # long_side * short_side是外接矩形的面积。area是原轮廓的面积
-            # 轮廓面积 / 外接矩形面积：表示轮廓占矩形的比例。
-            if area / (long_side * short_side) < MIN_RECT_FILL:     #这个比例只是形状筛选，不代表识别正确率。
-                continue
-            
-            # 检查矩形是不是碰到了裁剪边界。
-            box = cv.boxPoints(rect)  # float32 数组，形状 (4,2)，四个顶点。
-            # ROI 把水管切断时不能用剩下那截长度来换算，所以放弃该候选。
-            if (np.min(box[:, 0]) <= 1 or np.max(box[:, 0]) >= 638 or
-                    np.min(box[:, 1]) <= 1 or np.max(box[:, 1]) >= 118):
-                continue
+            # #取出矩形的长边、短边
+            # side1, side2 = rect[1]  
+            # long_side = max(side1, side2)   #长边
+            # short_side = min(side1, side2)  #短边
+
+            # # 排除太窄、太短的矩形。
+            # if short_side < 8 or long_side < MIN_PIPE_LENGTH:
+            #     continue
+
+            # # 排除不够细长的矩形。
+            # if long_side / short_side < MIN_PIPE_RATIO: #要求长边 ÷ 短边 ≥ MIN_PIPE_RATIO
+            #     continue
+
+            # # 检查轮廓有没有比较充分地占满矩形。
+            # # long_side * short_side是外接矩形的面积。area是原轮廓的面积
+            # # 轮廓面积 / 外接矩形面积：表示轮廓占矩形的比例。
+            # if area / (long_side * short_side) < MIN_RECT_FILL:     #这个比例只是形状筛选，不代表识别正确率。
+            #     continue
+
+            # # 检查矩形是不是碰到了裁剪边界。
+            # box = cv.boxPoints(rect)  # float32 数组，形状 (4,2)，四个顶点。
+
+            # # ROI 把水管切断时不能用剩下那截长度来换算，所以放弃该候选。
+            # if (np.min(box[:, 0]) <= 1 or np.max(box[:, 0]) >= 638 or
+            #         np.min(box[:, 1]) <= 1 or np.max(box[:, 1]) >= 118):
+            #     continue
+
+
+            #在通过检查的候选中，保留面积最大的一个。
+            # 前面初始化过：
+            # pipe_area = 0.0
+            # pipe_rect = None
             if area > pipe_area:
                 pipe_area = area
                 pipe_rect = rect
